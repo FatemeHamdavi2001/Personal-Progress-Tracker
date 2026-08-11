@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
   Award,
@@ -12,26 +12,40 @@ import {
   BarChart3,
   Flame,
   ArrowUpRight,
-  Share2
+  Share2,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Activity, Goal } from '../types/tracker';
 import { ColorThemeConfig } from '../types/theme';
-import { toPersianDigits, formatMinutesToHours } from '../utils/jalali';
+import { toPersianDigits, formatMinutesToHours, formatJalaliDate, getPersianDayName } from '../utils/jalali';
+import { Language, translations } from '../utils/translations';
+import { MonthlyReportPdfModal } from './MonthlyReportPdfModal';
 
 interface WeeklyReportWidgetProps {
   activities: Activity[];
   goals: Goal[];
   activeTheme: ColorThemeConfig;
+  userName?: string;
+  lang?: Language;
 }
+
+const DEFAULT_BAR_COLORS = [
+  '#06B6D4', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899', '#3B82F6', '#14B8A6'
+];
 
 export const WeeklyReportWidget: React.FC<WeeklyReportWidgetProps> = ({
   activities,
   goals,
-  activeTheme
+  activeTheme,
+  userName = 'کاربر گرامی',
+  lang = 'fa'
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [copiedToast, setCopiedToast] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const t = translations[lang] || translations.fa;
 
   // Compute last 7 days range
   const now = new Date();
@@ -42,11 +56,11 @@ export const WeeklyReportWidget: React.FC<WeeklyReportWidgetProps> = ({
   // Filter activities from last 7 days
   const weeklyActivities = activities.filter(act => {
     const actDate = new Date(act.date);
-    return actDate >= sevenDaysAgo && actDate <= now;
+    return !isNaN(actDate.getTime()) ? actDate >= sevenDaysAgo && actDate <= now : true;
   });
 
   // Calculate metrics
-  const totalMinutesThisWeek = weeklyActivities.reduce((sum, a) => sum + a.duration, 0);
+  const totalMinutesThisWeek = weeklyActivities.reduce((sum, a) => sum + Number(a.duration || 0), 0);
   const totalHoursThisWeek = (totalMinutesThisWeek / 60).toFixed(1);
 
   // Unique active days in last 7 days
@@ -57,15 +71,49 @@ export const WeeklyReportWidget: React.FC<WeeklyReportWidgetProps> = ({
   const categoryMap: Record<string, number> = {};
   weeklyActivities.forEach(a => {
     const cat = a.category || 'عمومی';
-    categoryMap[cat] = (categoryMap[cat] || 0) + a.duration;
+    categoryMap[cat] = (categoryMap[cat] || 0) + Number(a.duration || 0);
   });
 
   const sortedCategories = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
   const topCategory = sortedCategories[0] ? sortedCategories[0][0] : null;
-  const topCategoryMins = sortedCategories[0] ? sortedCategories[0][1] : 0;
 
-  // Goals progress calculations
-  const totalGoalHoursTarget = goals.reduce((sum, g) => sum + g.targetHours, 0);
+  // Compute Bar Chart data for last 7 days with goal/task custom colors
+  const barChartData = useMemo(() => {
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
+      const dayName = getPersianDayName(d);
+      const dayActs = activities.filter(a => a.date === iso);
+      const mins = dayActs.reduce((sum, a) => sum + Number(a.duration || 0), 0);
+      const hours = Math.round((mins / 60) * 10) / 10;
+
+      // Assign custom color based on goal logged or fallback
+      let barColor = activeTheme.dotBg ? '#14B8A6' : '#06B6D4';
+      if (dayActs.length > 0) {
+        const goalWithColor = goals.find(g => g.id === dayActs[0].goalId && g.color);
+        if (goalWithColor?.color) {
+          barColor = goalWithColor.color;
+        } else {
+          barColor = DEFAULT_BAR_COLORS[i % DEFAULT_BAR_COLORS.length];
+        }
+      }
+
+      result.push({
+        dayName,
+        dateIso: iso,
+        hours,
+        minutes: mins,
+        color: barColor,
+        activitiesCount: dayActs.length
+      });
+    }
+    return result;
+  }, [activities, goals, activeTheme]);
+
+  // Overall goal percent calculation
+  const totalGoalHoursTarget = goals.reduce((sum, g) => sum + (g.targetHours || 0), 0);
   const totalGoalHoursAchieved = goals.reduce((sum, g) => {
     const loggedFromActs = activities
       .filter(a => a.goalId === g.id)
@@ -79,90 +127,31 @@ export const WeeklyReportWidget: React.FC<WeeklyReportWidgetProps> = ({
 
   // Determine performance tier
   let performanceBadge = {
-    label: 'آغاز مسیر',
+    label: lang === 'fa' ? 'آغاز مسیر' : 'Starting',
     color: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
     icon: Target
   };
 
-  if (activeDaysCount >= 5 && totalMinutesThisWeek >= 600) { // 10+ hours & 5+ days
+  if (activeDaysCount >= 5 && totalMinutesThisWeek >= 600) {
     performanceBadge = {
-      label: 'عملکرد فوق‌العاده',
+      label: lang === 'fa' ? 'عملکرد فوق‌العاده' : 'Exceptional',
       color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
       icon: Flame
     };
-  } else if (activeDaysCount >= 3 || totalMinutesThisWeek >= 300) { // 5+ hours or 3+ days
+  } else if (activeDaysCount >= 3 || totalMinutesThisWeek >= 300) {
     performanceBadge = {
-      label: 'در مسیر رشد',
+      label: lang === 'fa' ? 'در مسیر رشد' : 'On Track',
       color: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
       icon: TrendingUp
     };
   }
 
-  // Generate intelligent analysis narrative
-  const generateAnalysisText = () => {
-    if (weeklyActivities.length === 0) {
-      return 'هنوز هیچ فعالیتی در ۷ روز گذشته ثبت نشده است. با ثبت اولین فعالیت خود در روز جاری، روند پیشرفت و تحلیل عملکرد هفتگی فعال خواهد شد.';
-    }
-
-    let text = `در ۷ روز گذشته، شما در مجموع ${toPersianDigits(formatMinutesToHours(totalMinutesThisWeek))} زمان تمرکز داشته‌اید و در ${toPersianDigits(activeDaysCount)} روز از هفته فعال بوده‌اید. `;
-
-    if (topCategory) {
-      const topCatPercent = Math.round((topCategoryMins / totalMinutesThisWeek) * 100);
-      text += `بیشترین تمرکز شما روی بخش «${topCategory}» بود که ${toPersianDigits(topCatPercent)}٪ از کل فعالیت‌های این هفته را تشکیل می‌دهد. `;
-    }
-
-    if (goals.length > 0) {
-      if (overallGoalPercent >= 80) {
-        text += `مجموع پیشرفت شما در اهداف فعال به ${toPersianDigits(overallGoalPercent)}٪ رسیده است و در آستانه دستیابی کامل به اهداف خود قرار دارید!`;
-      } else if (overallGoalPercent >= 40) {
-        text += `پیشرفت کلی شما در اهداف ${toPersianDigits(overallGoalPercent)}٪ است. استمرار فعلی، شانس تحقق اهداف در زمان مقرر را به‌شدت افزایش می‌دهد.`;
-      } else {
-        text += `تاکنون ${toPersianDigits(overallGoalPercent)}٪ از اهداف تعریف‌شده محقق شده است. با افزایش زمان تمرکز روزانه، به اهداف اصلی نزدیک‌تر خواهید شد.`;
-      }
-    } else {
-      text += 'پیشنهاد می‌شود برای اندازه‌گیری دقیق‌تر عملکرد، یک هدف جدید در پنل اهداف تعریف کنید.';
-    }
-
-    return text;
-  };
-
-  // Generate actionable tips
-  const generateTips = () => {
-    const tips: string[] = [];
-
-    if (activeDaysCount < 3) {
-      tips.push('تثبیت ثبات قدم: حداقل ۴ روز در هفته را به ثبت فعالیت اختصاص دهید؛ حتی روزی ۲۰ دقیقه تمرکز، ماندگاری عادت را تثبیت می‌کند.');
-    } else if (activeDaysCount >= 5) {
-      tips.push('حفظ ثبات عالی: شما پایداری بالایی دارید! اکنون می‌توانید با برنامه‌ریزی زمان‌های استراحت منظم، از افت انرژی جلوگیری کنید.');
-    }
-
-    if (topCategory && sortedCategories.length > 1) {
-      const secondCat = sortedCategories[1][0];
-      tips.push(`توازن فعالیت‌ها: بخش عمده زمان شما به «${topCategory}» اختصاص داشته است. برای حفظ تعادل، کمی زمان بیشتر به «${secondCat}» تخصیص دهید.`);
-    } else if (sortedCategories.length === 1) {
-      tips.push('تنوع‌بخشی: ثبت فعالیت‌ها در دسته‌بندی‌های مختلف، به شما دید همه‌جانبه‌تری از حوزه‌های توسعه شخصی می‌دهد.');
-    }
-
-    if (totalMinutesThisWeek < 180) { // < 3 hours
-      tips.push('تکنیک پومودورو: استفاده از بازه‌های ۲۵ دقیقه‌ای تمرکز و ۵ دقیقه استراحت، شروع کار را آسان‌تر می‌سازد.');
-    } else {
-      tips.push('افزایش عمق تمرکز: بازه‌های زمانی نود دقیقه‌ای تمرکز عمیق (Deep Work) را برای موضوعات پیچیده‌تر امتحان کنید.');
-    }
-
-    return tips.slice(0, 2);
-  };
-
-  const analysisText = generateAnalysisText();
-  const tips = generateTips();
-
   const handleCopyReport = () => {
-    const reportSummary = `📊 گزارش عملکرد هفتگی
+    const reportSummary = `📊 گزارش عملکرد هفتگی You Can Do it
 ⏱ مجموع زمان تمرکز: ${formatMinutesToHours(totalMinutesThisWeek)}
 📅 روزهای فعال: ${activeDaysCount} از ۷ روز
 🎯 پیشرفت کلی اهداف: ${overallGoalPercent}٪
-📌 حوزه اصلی: ${topCategory || 'ثبت نشده'}
-
-${analysisText}`;
+📌 حوزه اصلی: ${topCategory || 'ثبت نشده'}`;
 
     navigator.clipboard.writeText(reportSummary);
     setCopiedToast(true);
@@ -176,9 +165,9 @@ ${analysisText}`;
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
-      className="bg-slate-800/40 rounded-2xl p-5 sm:p-6 border border-slate-700/50 relative overflow-hidden flex flex-col gap-5"
+      className="bg-slate-800/40 rounded-2xl p-5 sm:p-6 border border-slate-700/50 relative overflow-hidden flex flex-col gap-5 shadow-xl"
     >
-      {/* Decorative Glow Effect */}
+      {/* Decorative Glow */}
       <div className={`absolute -top-12 -left-12 w-40 h-40 rounded-full blur-3xl opacity-15 pointer-events-none ${activeTheme.swatchBg}`} />
 
       {/* Header */}
@@ -189,13 +178,10 @@ ${analysisText}`;
           </div>
           <div>
             <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2 font-sans">
-              <span>گزارش و تحلیل هفتگی</span>
-              <span className="text-[10px] font-mono font-normal bg-slate-900 border border-slate-700 px-2 py-0.5 rounded-full text-slate-400">
-                هفته جاری
-              </span>
+              <span>{t.barChartTitle}</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              تحلیل هوشمند میزان تمرکز و روند تحقق اهداف
+              {lang === 'fa' ? 'روند ۷ روز اخیر با رنگ‌های اختصاصی هر هدف' : '7-day analysis with distinct goal colors'}
             </p>
           </div>
         </div>
@@ -210,10 +196,55 @@ ${analysisText}`;
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
             className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition-colors cursor-pointer"
-            title={isExpanded ? 'بستن جزییات' : 'نمایش جزییات'}
           >
             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
+        </div>
+      </div>
+
+      {/* Redesigned Multi-Colored Bar Chart Area */}
+      <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-700/60 space-y-3">
+        <div className="flex items-center justify-between text-xs text-slate-400">
+          <span className="font-semibold text-slate-200">
+            {lang === 'fa' ? 'ساعات تمرکز روزانه:' : 'Daily Focus Hours:'}
+          </span>
+          <span className="font-mono text-teal-400 font-bold">
+            {lang === 'fa' ? toPersianDigits(totalHoursThisWeek) : totalHoursThisWeek} {t.hours}
+          </span>
+        </div>
+
+        <div className="h-48 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={barChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <XAxis
+                dataKey="dayName"
+                stroke="#64748B"
+                fontSize={11}
+                tickLine={false}
+              />
+              <YAxis
+                stroke="#64748B"
+                fontSize={11}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(val: any) => [`${lang === 'fa' ? toPersianDigits(val) : val} ${t.hours}`, 'زمان کارکرد']}
+                contentStyle={{
+                  backgroundColor: '#0F172A',
+                  borderColor: '#334155',
+                  borderRadius: '12px',
+                  color: '#F8FAFC',
+                  fontSize: '12px',
+                  fontFamily: 'inherit'
+                }}
+              />
+              <Bar dataKey="hours" radius={[8, 8, 0, 0]}>
+                {barChartData.map((entry, index) => (
+                  <Cell key={`bar-cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
@@ -226,9 +257,9 @@ ${analysisText}`;
           </span>
           <div className="mt-2 flex items-baseline justify-between">
             <span className={`text-lg font-extrabold font-mono ${activeTheme.textPrimary}`}>
-              {toPersianDigits(totalHoursThisWeek)}
+              {lang === 'fa' ? toPersianDigits(totalHoursThisWeek) : totalHoursThisWeek}
             </span>
-            <span className="text-[10px] text-slate-500 font-sans">ساعت</span>
+            <span className="text-[10px] text-slate-500 font-sans">{t.hours}</span>
           </div>
         </div>
 
@@ -239,9 +270,9 @@ ${analysisText}`;
           </span>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-lg font-extrabold font-mono text-amber-300">
-              {toPersianDigits(activeDaysCount)} <span className="text-xs font-normal text-slate-500">/ ۷</span>
+              {lang === 'fa' ? toPersianDigits(activeDaysCount) : activeDaysCount} / 7
             </span>
-            <span className="text-[10px] text-slate-500 font-sans">روز</span>
+            <span className="text-[10px] text-slate-500 font-sans">{t.days}</span>
           </div>
         </div>
 
@@ -252,9 +283,8 @@ ${analysisText}`;
           </span>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-lg font-extrabold font-mono text-emerald-400">
-              ٪{toPersianDigits(overallGoalPercent)}
+              %{lang === 'fa' ? toPersianDigits(overallGoalPercent) : overallGoalPercent}
             </span>
-            <span className="text-[10px] text-slate-500 font-sans">کل</span>
           </div>
         </div>
 
@@ -273,121 +303,37 @@ ${analysisText}`;
         </div>
       </div>
 
-      {/* Expanded Report Content */}
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
-            className="space-y-4 pt-1 overflow-hidden"
-          >
-            {/* Analysis Narrative Box */}
-            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 text-xs leading-relaxed text-slate-300 flex items-start gap-3">
-              <Sparkles className={`w-5 h-5 ${activeTheme.textPrimary} shrink-0 mt-0.5 animate-pulse`} />
-              <div className="space-y-1.5 flex-1">
-                <span className="font-bold text-slate-100 block">تحلیل و سنجش روند:</span>
-                <p className="text-slate-300 leading-relaxed font-sans">{analysisText}</p>
-              </div>
-            </div>
+      {/* PDF Export & Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-700/60">
+        <button
+          type="button"
+          onClick={() => setIsPdfModalOpen(true)}
+          className="px-4 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg transition-all active:scale-95 cursor-pointer"
+        >
+          <FileText className="w-4 h-4" />
+          <span>{lang === 'fa' ? 'دانلود گزارش PDF پیشرفت ماهانه' : 'Download Monthly Progress PDF Report'}</span>
+        </button>
 
-            {/* Smart Suggestions */}
-            {tips.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Lightbulb className="w-4 h-4 text-amber-400" />
-                  <span>پیشنهادهای کاربردی برای هفته پیش‌رو:</span>
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {tips.map((tip, i) => (
-                    <div
-                      key={i}
-                      className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3 text-[11px] text-slate-300 flex items-start gap-2.5"
-                    >
-                      <ArrowUpRight className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-                      <span>{tip}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        <button
+          type="button"
+          onClick={handleCopyReport}
+          className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer"
+        >
+          <Share2 className="w-4 h-4 text-teal-400" />
+          <span>{copiedToast ? (lang === 'fa' ? 'کپی شد!' : 'Copied!') : (lang === 'fa' ? 'اشتراک خلاصه' : 'Share Summary')}</span>
+        </button>
+      </div>
 
-            {/* Goal Proximity Visual Progress Bars */}
-            {goals.length > 0 && (
-              <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
-                <div className="flex justify-between items-center text-xs font-bold text-slate-200">
-                  <span className="flex items-center gap-1.5">
-                    <Target className="w-4 h-4 text-emerald-400" />
-                    <span>میزان نزدیکی به اهداف فعال:</span>
-                  </span>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    {toPersianDigits(goals.length)} هدف در حال پیگیری
-                  </span>
-                </div>
-
-                <div className="space-y-2.5">
-                  {goals.map(goal => {
-                    const loggedFromActs = activities
-                      .filter(a => a.goalId === goal.id)
-                      .reduce((s, a) => s + (a.duration / 60), 0);
-                    const currentTot = (goal.currentHours || 0) + loggedFromActs;
-                    const pct = Math.min(Math.round((currentTot / goal.targetHours) * 100), 100);
-
-                    return (
-                      <div key={goal.id} className="space-y-1">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="font-medium text-slate-300">{goal.title}</span>
-                          <span className="font-mono text-slate-400">
-                            ٪{toPersianDigits(pct)} ({toPersianDigits(currentTot.toFixed(1))}/{toPersianDigits(goal.targetHours)}h)
-                          </span>
-                        </div>
-                        <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              pct >= 100
-                                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
-                                : pct >= 50
-                                ? activeTheme.btnPrimary
-                                : 'bg-slate-600'
-                            }`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Action Bar Footer */}
-            <div className="flex justify-between items-center pt-2 border-t border-slate-800/80 text-[11px]">
-              <span className="text-slate-500">
-                بروزرسانی بر اساس {toPersianDigits(weeklyActivities.length)} ثبت فعالیت این هفته
-              </span>
-
-              <button
-                type="button"
-                onClick={handleCopyReport}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 rounded-lg transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
-              >
-                {copiedToast ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-300">گزارش کپی شد</span>
-                  </>
-                ) : (
-                  <>
-                    <Share2 className="w-3.5 h-3.5 text-slate-400" />
-                    <span>کپی خلاصه گزارش</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Monthly PDF Report Modal */}
+      <MonthlyReportPdfModal
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        activities={activities}
+        goals={goals}
+        activeTheme={activeTheme}
+        userName={userName}
+        lang={lang}
+      />
     </motion.div>
   );
 };

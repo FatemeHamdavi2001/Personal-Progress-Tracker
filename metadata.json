@@ -1,6 +1,6 @@
 {
-  "name": "ردیاب پیشرفت شخصی",
-  "description": "اپلیکیشن ردیابی فعالیت‌های روزانه و مدیریت اهداف شخصی با قالب شیک تیره",
+  "name": "You Can Do it",
+  "description": "اپلیکیشن ردیابی هوشمند اهداف و مدیریت زمان با امکانات کامل",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

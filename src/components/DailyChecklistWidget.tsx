@@ -7,16 +7,17 @@ import {
   CheckCircle2,
   Sparkles,
   ChevronDown,
-  ChevronUp,
-  Target,
   ListTodo,
-  Calendar,
-  Zap
+  X,
+  RotateCcw,
+  Edit2,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Activity, Goal } from '../types/tracker';
 import { ColorThemeConfig } from '../types/theme';
-import { toPersianDigits, g2j, JALALI_MONTH_NAMES } from '../utils/jalali';
+import { toPersianDigits, formatDisplayDateWithMonth } from '../utils/jalali';
+import { Language, translations } from '../utils/translations';
 
 interface ChecklistItem {
   id: string;
@@ -31,26 +32,33 @@ interface DailyChecklistWidgetProps {
   goals: Goal[];
   activeTheme: ColorThemeConfig;
   username: string;
+  lang?: Language;
 }
 
 export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
   activities,
   goals,
   activeTheme,
-  username
+  username,
+  lang = 'fa'
 }) => {
+  const t = translations[lang] || translations.fa;
   const todayObj = new Date();
   const todayIso = todayObj.toISOString().split('T')[0];
-  const [jy, jm, jd] = g2j(todayObj.getFullYear(), todayObj.getMonth() + 1, todayObj.getDate());
-  const todayPersianStr = `${toPersianDigits(jd)} ${JALALI_MONTH_NAMES[jm - 1]}`;
+  const dateStr = formatDisplayDateWithMonth(todayObj, lang as 'fa' | 'en');
 
   const storageKey = `progress_daily_checklist_${username}_${todayIso}`;
 
   const [customItems, setCustomItems] = useState<ChecklistItem[]>([]);
   const [completedAutoIds, setCompletedAutoIds] = useState<Record<string, boolean>>({});
   const [deletedAutoIds, setDeletedAutoIds] = useState<Record<string, boolean>>({});
+  const [editedAutoTexts, setEditedAutoTexts] = useState<Record<string, string>>({});
   const [newInputText, setNewInputText] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+
+  // Edit item state
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemText, setEditingItemText] = useState('');
 
   // Load custom items & check states from localStorage on mount or date/username change
   useEffect(() => {
@@ -61,15 +69,18 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
         setCustomItems(parsed.customItems || []);
         setCompletedAutoIds(parsed.completedAutoIds || {});
         setDeletedAutoIds(parsed.deletedAutoIds || {});
+        setEditedAutoTexts(parsed.editedAutoTexts || {});
       } else {
         setCustomItems([]);
         setCompletedAutoIds({});
         setDeletedAutoIds({});
+        setEditedAutoTexts({});
       }
     } catch {
       setCustomItems([]);
       setCompletedAutoIds({});
       setDeletedAutoIds({});
+      setEditedAutoTexts({});
     }
   }, [storageKey]);
 
@@ -77,7 +88,8 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
   const saveState = (
     updatedCustoms: ChecklistItem[],
     updatedAutos: Record<string, boolean>,
-    updatedDeletedAutos: Record<string, boolean>
+    updatedDeletedAutos: Record<string, boolean>,
+    updatedEditedTexts: Record<string, string> = editedAutoTexts
   ) => {
     try {
       localStorage.setItem(
@@ -85,7 +97,8 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
         JSON.stringify({
           customItems: updatedCustoms,
           completedAutoIds: updatedAutos,
-          deletedAutoIds: updatedDeletedAutos
+          deletedAutoIds: updatedDeletedAutos,
+          editedAutoTexts: updatedEditedTexts
         })
       );
     } catch (e) {
@@ -95,42 +108,45 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
 
   // Generate dynamic auto items based on user's registered goals and activities
   const todayActivities = activities.filter(a => a.date === todayIso);
-  const todayTotalMins = todayActivities.reduce((sum, a) => sum + a.duration, 0);
+  const todayTotalMins = todayActivities.reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
 
   const rawAutoItems: ChecklistItem[] = [];
 
   // Item 1: General activity logging
   const hasLoggedToday = todayActivities.length > 0;
+  const auto1Text = editedAutoTexts['auto-logged-today'] || (lang === 'fa' ? 'ثبت حداقل یک فعالیت جدید برای امروز' : 'Log at least one activity for today');
   rawAutoItems.push({
     id: 'auto-logged-today',
-    text: 'ثبت حداقل یک فعالیت جدید برای امروز',
+    text: auto1Text,
     completed: hasLoggedToday || !!completedAutoIds['auto-logged-today'],
     isAuto: true,
-    category: 'عمومی'
+    category: lang === 'fa' ? 'عمومی' : 'General'
   });
 
   // Item 2: Minimum focus target
   const reached30Mins = todayTotalMins >= 30;
+  const auto2Text = editedAutoTexts['auto-target-30m'] || (lang === 'fa' ? 'رسیدن به حداقل ۳۰ دقیقه زمان تمرکز' : 'Reach at least 30 minutes of focus time');
   rawAutoItems.push({
     id: 'auto-target-30m',
-    text: 'رسیدن به حداقل ۳۰ دقیقه زمان تمرکز',
+    text: auto2Text,
     completed: reached30Mins || !!completedAutoIds['auto-target-30m'],
     isAuto: true,
-    category: 'تمرکز'
+    category: lang === 'fa' ? 'تمرکز' : 'Focus'
   });
 
   // Items derived from user goals
   goals.forEach(goal => {
     const goalLoggedMins = todayActivities
       .filter(a => a.goalId === goal.id)
-      .reduce((sum, a) => sum + a.duration, 0);
+      .reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
     const isGoalCompletedToday = goalLoggedMins > 0;
+    const autoGoalText = editedAutoTexts[`auto-goal-${goal.id}`] || (lang === 'fa' ? `پیشبرد هدف: «${goal.title}»` : `Advance goal: "${goal.title}"`);
     rawAutoItems.push({
       id: `auto-goal-${goal.id}`,
-      text: `پیشبرد هدف: «${goal.title}»`,
+      text: autoGoalText,
       completed: isGoalCompletedToday || !!completedAutoIds[`auto-goal-${goal.id}`],
       isAuto: true,
-      category: goal.category || 'اهداف'
+      category: goal.category || (lang === 'fa' ? 'اهداف' : 'Goals')
     });
   });
 
@@ -146,13 +162,13 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
     if (isAuto) {
       const nextAutos = { ...completedAutoIds, [id]: !completedAutoIds[id] };
       setCompletedAutoIds(nextAutos);
-      saveState(customItems, nextAutos, deletedAutoIds);
+      saveState(customItems, nextAutos, deletedAutoIds, editedAutoTexts);
     } else {
       const nextCustoms = customItems.map(item =>
         item.id === id ? { ...item, completed: !item.completed } : item
       );
       setCustomItems(nextCustoms);
-      saveState(nextCustoms, completedAutoIds, deletedAutoIds);
+      saveState(nextCustoms, completedAutoIds, deletedAutoIds, editedAutoTexts);
     }
   };
 
@@ -164,12 +180,13 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
       id: `custom-${Date.now()}`,
       text: newInputText.trim(),
       completed: false,
-      isAuto: false
+      isAuto: false,
+      category: lang === 'fa' ? 'شخصی' : 'Personal'
     };
 
     const updated = [...customItems, newItem];
     setCustomItems(updated);
-    saveState(updated, completedAutoIds, deletedAutoIds);
+    saveState(updated, completedAutoIds, deletedAutoIds, editedAutoTexts);
     setNewInputText('');
   };
 
@@ -177,178 +194,307 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
     if (isAuto) {
       const nextDeletedAutos = { ...deletedAutoIds, [id]: true };
       setDeletedAutoIds(nextDeletedAutos);
-      saveState(customItems, completedAutoIds, nextDeletedAutos);
+      saveState(customItems, completedAutoIds, nextDeletedAutos, editedAutoTexts);
     } else {
       const updatedCustoms = customItems.filter(i => i.id !== id);
       setCustomItems(updatedCustoms);
-      saveState(updatedCustoms, completedAutoIds, deletedAutoIds);
+      saveState(updatedCustoms, completedAutoIds, deletedAutoIds, editedAutoTexts);
     }
+  };
+
+  const handleStartEdit = (item: ChecklistItem) => {
+    setEditingItemId(item.id);
+    setEditingItemText(item.text);
+  };
+
+  const handleSaveEdit = (item: ChecklistItem) => {
+    if (!editingItemText.trim()) return;
+    const newText = editingItemText.trim();
+
+    if (item.isAuto) {
+      const nextEdited = { ...editedAutoTexts, [item.id]: newText };
+      setEditedAutoTexts(nextEdited);
+      saveState(customItems, completedAutoIds, deletedAutoIds, nextEdited);
+    } else {
+      const nextCustoms = customItems.map(i =>
+        i.id === item.id ? { ...i, text: newText } : i
+      );
+      setCustomItems(nextCustoms);
+      saveState(nextCustoms, completedAutoIds, deletedAutoIds, editedAutoTexts);
+    }
+    setEditingItemId(null);
   };
 
   const handleRestoreAutoItems = () => {
     setDeletedAutoIds({});
-    saveState(customItems, completedAutoIds, {});
+    saveState(customItems, completedAutoIds, {}, editedAutoTexts);
   };
 
+  const formatNum = (num: number) => (lang === 'fa' ? toPersianDigits(num) : String(num));
+
   return (
-    <div className="relative">
-      {/* Compact Top Corner Widget Button */}
+    <>
+      {/* High contrast, prominent widget trigger button in Header */}
       <motion.button
         type="button"
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
-        onClick={() => setIsOpen(!isOpen)}
-        className={`px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-200 border ${
+        onClick={() => setIsOpen(true)}
+        className={`px-3.5 py-2 bg-slate-900 border ${
           progressPercent === 100
-            ? 'border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+            ? 'border-emerald-500/80 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
             : activeTheme.badgeBorder
-        } rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer text-xs font-sans`}
+        } rounded-xl shadow-md transition-all flex items-center gap-2.5 cursor-pointer text-xs font-sans font-bold text-slate-100 hover:text-white hover:border-slate-500`}
       >
         <div className="relative flex items-center justify-center">
           <ListTodo className={`w-4 h-4 ${activeTheme.textPrimary}`} />
           {progressPercent === 100 && (
-            <span className="w-2 h-2 rounded-full bg-emerald-400 absolute -top-0.5 -right-0.5 animate-ping" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 absolute -top-0.5 -right-0.5 animate-ping" />
           )}
         </div>
 
-        <span className="font-bold text-slate-200 hidden sm:inline">چک‌لیست روزانه</span>
+        <span className="font-bold hidden sm:inline">
+          {lang === 'fa' ? 'چک‌لیست روزانه' : 'Daily Checklist'}
+        </span>
 
         {/* Badge Pill */}
         <span
-          className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+          className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
             progressPercent === 100
               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
               : `${activeTheme.badgeBg} ${activeTheme.badgeText} border ${activeTheme.badgeBorder}`
           }`}
         >
-          {toPersianDigits(completedCount)} / {toPersianDigits(totalCount)}
+          {formatNum(completedCount)} / {formatNum(totalCount)}
         </span>
 
-        {isOpen ? (
-          <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-        ) : (
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-        )}
+        <ChevronDown className="w-4 h-4 text-slate-300" />
       </motion.button>
 
-      {/* Popover / Panel Modal */}
+      {/* FULL SCREEN MODAL OVERLAY */}
       <AnimatePresence>
         {isOpen && (
-          <>
-            {/* Backdrop for easy closing */}
+          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            {/* Click-away Backdrop */}
             <div
-              className="fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[1px]"
+              className="fixed inset-0 -z-10"
               onClick={() => setIsOpen(false)}
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="absolute left-0 mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl z-50 p-4 space-y-4 text-xs overflow-hidden"
+              className="bg-slate-900 border border-slate-700/90 rounded-3xl shadow-2xl max-w-lg w-full p-5 sm:p-6 space-y-4 text-xs overflow-hidden relative"
             >
-              {/* Header */}
+              {/* Modal Header */}
               <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className={`w-7 h-7 rounded-lg ${activeTheme.badgeBg} ${activeTheme.textPrimary} flex items-center justify-center font-bold`}>
-                    <CheckSquare className="w-4 h-4" />
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-2xl ${activeTheme.badgeBg} ${activeTheme.textPrimary} border ${activeTheme.badgeBorder} flex items-center justify-center font-bold shadow-md`}>
+                    <CheckSquare className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-100 font-sans text-sm flex items-center gap-1.5">
-                      <span>چک‌لیست امروز</span>
-                      <span className="text-[10px] font-normal text-slate-400 font-mono">
-                        ({todayPersianStr})
-                      </span>
+                    <h3 className="font-bold text-slate-100 font-sans text-base flex items-center gap-2">
+                      <span>{lang === 'fa' ? 'چک‌لیست و کارهای امروز' : 'Today Daily Checklist'}</span>
                     </h3>
-                    <p className="text-[10px] text-slate-400">
-                      بر اساس اهداف و فعالیت‌های شخصی شما
+                    <p className="text-xs text-slate-400 font-mono mt-0.5">
+                      📅 {dateStr}
                     </p>
                   </div>
                 </div>
 
-                <span className="text-[11px] font-mono font-bold text-slate-300">
-                  ٪{toPersianDigits(progressPercent)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-xl border ${
+                    progressPercent === 100
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-200 border-slate-700'
+                  }`}>
+                    %{formatNum(progressPercent)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="p-1.5 text-slate-400 hover:text-slate-100 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Progress Bar */}
-              <div className="space-y-1">
-                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+              <div className="space-y-1.5 bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+                <div className="flex justify-between text-[11px] text-slate-400 font-medium">
+                  <span>{lang === 'fa' ? 'میزان پیشرفت کارهای امروز:' : 'Today Progress:'}</span>
+                  <span className="font-mono">{formatNum(completedCount)} {lang === 'fa' ? 'از' : 'of'} {formatNum(totalCount)}</span>
+                </div>
+                <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-0.5">
                   <motion.div
                     className={`h-full rounded-full transition-all duration-300 ${
                       progressPercent === 100
-                        ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]'
+                        ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]'
                         : activeTheme.btnPrimary
                     }`}
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
                 {progressPercent === 100 && (
-                  <p className="text-[10px] text-emerald-400 font-medium text-center flex items-center justify-center gap-1 pt-0.5">
-                    <Sparkles className="w-3 h-3" />
-                    <span>عالی بود! تمام چک‌لیست امروز تکمیل شد.</span>
+                  <p className="text-xs text-emerald-400 font-bold text-center flex items-center justify-center gap-1.5 pt-1">
+                    <Sparkles className="w-4 h-4 animate-bounce" />
+                    <span>{lang === 'fa' ? 'عالی بود! تمام کارهای امروز با موفقیت تکمیل شد.' : 'Awesome! All items completed today.'}</span>
                   </p>
                 )}
               </div>
 
-              {/* Items List */}
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-800/50">
-                {allItems.map(item => (
-                  <div
-                    key={item.id}
-                    onClick={() => toggleItem(item.id, item.isAuto)}
-                    className={`pt-2 first:pt-0 flex items-start gap-2.5 p-1.5 rounded-xl cursor-pointer transition-colors group ${
-                      item.completed ? 'opacity-70 bg-slate-950/40' : 'hover:bg-slate-800/60'
-                    }`}
+              {/* Add Custom Daily Task Form */}
+              <form onSubmit={handleAddCustom} className="space-y-2 pt-1">
+                <label className="block text-slate-300 font-semibold text-xs">
+                  {lang === 'fa' ? 'افزودن آیتم جدید به چک‌لیست امروز:' : 'Add new item to today checklist:'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newInputText}
+                    onChange={e => setNewInputText(e.target.value)}
+                    placeholder={lang === 'fa' ? 'مثلاً: ۱۰ صفحه مطالعه کتاب، ورزش صبحگاهی...' : 'e.g. Read 10 pages, Morning exercise...'}
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newInputText.trim()}
+                    className={`px-4 py-2 ${activeTheme.btnPrimary} text-slate-950 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 cursor-pointer shadow-md shrink-0`}
                   >
-                    <button
-                      type="button"
-                      className="mt-0.5 text-slate-400 group-hover:text-slate-200 transition-colors"
-                    >
-                      {item.completed ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 fill-emerald-500/20" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
-                      )}
-                    </button>
+                    <Plus className="w-4 h-4" />
+                    <span>{lang === 'fa' ? 'افزودن' : 'Add'}</span>
+                  </button>
+                </div>
+              </form>
 
-                    <div className="flex-1 text-right space-y-0.5">
-                      <p
-                        className={`text-xs font-sans transition-all leading-relaxed ${
+              {/* Items List */}
+              <div className="space-y-2 pt-2">
+                <h4 className="text-slate-300 font-bold text-xs flex items-center justify-between">
+                  <span>{lang === 'fa' ? 'لیست کارهای امروز:' : 'Today Tasks:'}</span>
+                  {allItems.length > 0 && (
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      {lang === 'fa' ? 'روی کارها کلیک کنید تا انجام‌شده شوند' : 'Click task to mark done'}
+                    </span>
+                  )}
+                </h4>
+
+                <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                  {allItems.map(item => {
+                    const isEditing = editingItemId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => !isEditing && toggleItem(item.id, item.isAuto)}
+                        className={`flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all group ${
+                          !isEditing ? 'cursor-pointer' : ''
+                        } ${
                           item.completed
-                            ? 'line-through text-slate-500'
-                            : 'text-slate-200 font-medium'
+                            ? 'bg-slate-950/40 border-slate-800/80 opacity-70'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/60'
                         }`}
                       >
-                        {item.text}
-                      </p>
-                      {item.category && (
-                        <span className="inline-block text-[9px] text-slate-500 font-mono">
-                          {item.isAuto ? '⚡ هوشمند' : '📌 شخصی'} • {item.category}
-                        </span>
-                      )}
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <button
+                            type="button"
+                            className="text-slate-400 group-hover:text-slate-200 transition-colors shrink-0"
+                          >
+                            {item.completed ? (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400 fill-emerald-500/20" />
+                            ) : (
+                              <Square className="w-5 h-5 text-slate-500 group-hover:text-slate-300" />
+                            )}
+                          </button>
+
+                          {isEditing ? (
+                            <div className="flex items-center gap-1.5 flex-1" onClick={e => e.stopPropagation()}>
+                              <input
+                                type="text"
+                                value={editingItemText}
+                                onChange={e => setEditingItemText(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleSaveEdit(item);
+                                  if (e.key === 'Escape') setEditingItemId(null);
+                                }}
+                                autoFocus
+                                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-teal-400"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEdit(item)}
+                                className="p-1 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 rounded-lg cursor-pointer"
+                                title={lang === 'fa' ? 'ذخیره' : 'Save'}
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingItemId(null)}
+                                className="p-1 text-slate-400 hover:text-slate-200 rounded-lg cursor-pointer"
+                                title={lang === 'fa' ? 'انصراف' : 'Cancel'}
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex-1 min-w-0">
+                              <p
+                                className={`text-xs font-sans transition-all leading-relaxed truncate ${
+                                  item.completed
+                                    ? 'line-through text-slate-500'
+                                    : 'text-slate-100 font-medium'
+                                }`}
+                              >
+                                {item.text}
+                              </p>
+                              {item.category && (
+                                <span className="inline-block text-[9px] text-slate-400 font-mono mt-0.5">
+                                  {item.isAuto ? '⚡ هوشمند' : '📌 شخصی'} • {item.category}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {!isEditing && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleStartEdit(item);
+                              }}
+                              className="text-slate-500 hover:text-amber-300 p-1.5 rounded-lg hover:bg-slate-800 transition-all cursor-pointer shrink-0"
+                              title={lang === 'fa' ? 'ویرایش عنوان' : 'Edit item'}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleDeleteItem(item.id, item.isAuto);
+                              }}
+                              className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-800 transition-all cursor-pointer shrink-0"
+                              title={lang === 'fa' ? 'حذف از لیست' : 'Remove item'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {allItems.length === 0 && (
+                    <div className="text-center py-8 bg-slate-950/40 rounded-2xl border border-slate-800/80 text-slate-400 text-xs space-y-1">
+                      <p>{lang === 'fa' ? 'هیچ آیتمی در چک‌لیست امروز وجود ندارد.' : 'No items in today checklist.'}</p>
+                      <p className="text-[11px] text-slate-500">{lang === 'fa' ? 'یک آیتم جدید از کادر بالا اضافه کنید.' : 'Add a new item from input above.'}</p>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation();
-                        handleDeleteItem(item.id, item.isAuto);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 p-1 transition-opacity cursor-pointer shrink-0"
-                      title="حذف این مورد از چک‌لیست"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-
-                {allItems.length === 0 && (
-                  <div className="text-center py-4 text-slate-500 text-[11px] space-y-1">
-                    <p>هیچ آیتمی در چک‌لیست امروز وجود ندارد.</p>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {Object.keys(deletedAutoIds).length > 0 && (
@@ -356,34 +502,17 @@ export const DailyChecklistWidget: React.FC<DailyChecklistWidgetProps> = ({
                   <button
                     type="button"
                     onClick={handleRestoreAutoItems}
-                    className="text-[10px] text-teal-400 hover:underline cursor-pointer flex items-center gap-1 font-sans"
+                    className="text-[11px] text-teal-400 hover:underline cursor-pointer flex items-center gap-1 font-sans font-medium"
                   >
-                    <span>بازیابی آیتم‌های حذف‌شده هوشمند</span>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>{lang === 'fa' ? 'بازیابی آیتم‌های هوشمند حذف‌شده' : 'Restore deleted smart items'}</span>
                   </button>
                 </div>
               )}
-
-              {/* Add Custom Checklist Item Input Form */}
-              <form onSubmit={handleAddCustom} className="flex gap-2 pt-2 border-t border-slate-800">
-                <input
-                  type="text"
-                  value={newInputText}
-                  onChange={e => setNewInputText(e.target.value)}
-                  placeholder="افزودن آیتم شخصی به چک‌لیست..."
-                  className="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-slate-500"
-                />
-                <button
-                  type="submit"
-                  disabled={!newInputText.trim()}
-                  className={`px-3 py-1.5 ${activeTheme.btnPrimary} rounded-xl font-bold flex items-center justify-center transition-opacity disabled:opacity-40 cursor-pointer`}
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </form>
             </motion.div>
-          </>
+          </div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 };

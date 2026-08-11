@@ -8,7 +8,9 @@ import {
   getJalaliMonthDays,
   getPersianStartWeekday,
   jalaliToIso,
-  formatMinutesToHours
+  formatMinutesToHours,
+  getTehranJalaliToday,
+  getTehranTodayIso
 } from '../utils/jalali';
 import { Activity } from '../types/tracker';
 import { ColorThemeConfig } from '../types/theme';
@@ -26,13 +28,8 @@ export const MonthlyCalendarWidget: React.FC<MonthlyCalendarWidgetProps> = ({
   onSelectDate,
   activeTheme
 }) => {
-  const todayObj = new Date();
-  const [todayJy, todayJm, todayJd] = g2j(
-    todayObj.getFullYear(),
-    todayObj.getMonth() + 1,
-    todayObj.getDate()
-  );
-  const todayIso = todayObj.toISOString().split('T')[0];
+  const [todayJy, todayJm, todayJd] = getTehranJalaliToday();
+  const todayIso = getTehranTodayIso();
 
   const [currentJy, setCurrentJy] = useState(todayJy);
   const [currentJm, setCurrentJm] = useState(todayJm);

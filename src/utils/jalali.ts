@@ -1,8 +1,81 @@
 // Persian Jalali date helpers and digit converter
 
 export function toPersianDigits(num: number | string): string {
+  if (num === null || num === undefined) return '';
   const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
   return String(num).replace(/\d/g, (digit) => persianDigits[parseInt(digit, 10)]);
+}
+
+// Get Date components specifically for Tehran Timezone (Asia/Tehran)
+export function getTehranDateParts(d: Date = new Date()): {
+  year: number;
+  month: number;
+  day: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  dayOfWeek: number;
+} {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tehran',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+
+    const parts = formatter.formatToParts(d);
+    const map: Record<string, string> = {};
+    parts.forEach(p => { map[p.type] = p.value; });
+
+    const year = parseInt(map.year, 10);
+    const month = parseInt(map.month, 10);
+    const day = parseInt(map.day, 10);
+    let hours = parseInt(map.hour, 10);
+    if (hours === 24) hours = 0; // Handle 24-hour edge case in Intl
+    const minutes = parseInt(map.minute, 10);
+    const seconds = parseInt(map.second, 10);
+
+    const tehranDateObj = new Date(year, month - 1, day);
+    const dayOfWeek = tehranDateObj.getDay();
+
+    return { year, month, day, hours, minutes, seconds, dayOfWeek };
+  } catch (err) {
+    // Fallback if Intl timeZone fails
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    const hours = d.getHours();
+    const minutes = d.getMinutes();
+    const seconds = d.getSeconds();
+    const dayOfWeek = d.getDay();
+    return { year, month, day, hours, minutes, seconds, dayOfWeek };
+  }
+}
+
+// Get Tehran current ISO date string YYYY-MM-DD
+export function getTehranTodayIso(): string {
+  const { year, month, day } = getTehranDateParts();
+  const pad = (n: number) => (n < 10 ? '0' + n : String(n));
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+// Get Tehran current Jalali tuple [jy, jm, jd]
+export function getTehranJalaliToday(): [number, number, number] {
+  const { year, month, day } = getTehranDateParts();
+  return g2j(year, month, day);
+}
+
+// Format Tehran live time string (HH:MM:SS)
+export function formatTehranTime(d: Date = new Date(), lang: 'fa' | 'en' = 'fa'): string {
+  const { hours, minutes, seconds } = getTehranDateParts(d);
+  const pad = (n: number) => (n < 10 ? '0' + n : String(n));
+  const timeStr = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  return lang === 'fa' ? toPersianDigits(timeStr) : timeStr;
 }
 
 // Gregorian to Jalali converter
@@ -25,13 +98,31 @@ export function g2j(gy: number, gm: number, gd: number): [number, number, number
   return [jy, jm, jd];
 }
 
-export function formatJalaliDate(date: Date): string {
+export function formatJalaliDate(dateInput: Date | string | number): string {
+  if (!dateInput) return '-';
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(date.getTime())) {
+    return String(dateInput);
+  }
   const [jy, jm, jd] = g2j(date.getFullYear(), date.getMonth() + 1, date.getDate());
   const pad = (n: number) => n < 10 ? '0' + n : String(n);
   return `${jy}/${pad(jm)}/${pad(jd)}`;
 }
 
-export function getPersianDayName(date: Date): string {
+export function formatJalaliTime(dateInput?: Date | string | number): string {
+  const date = dateInput ? (dateInput instanceof Date ? dateInput : new Date(dateInput)) : new Date();
+  if (isNaN(date.getTime())) return '00:00:00';
+  const pad = (n: number) => n < 10 ? '0' + n : String(n);
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export function getPersianDayName(dateInput: Date | string | number, lang: 'fa' | 'en' = 'fa'): string {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(date.getTime())) return '';
+  if (lang === 'en') {
+    const enDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return enDays[date.getDay()];
+  }
   const days = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
   return days[date.getDay()];
 }
@@ -40,6 +131,46 @@ export const JALALI_MONTH_NAMES = [
   'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
   'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'
 ];
+
+export const GREGORIAN_MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+
+// Language-aware Date Formatter (Jalali vs Gregorian)
+export function formatDisplayDate(dateInput: Date | string | number, lang: 'fa' | 'en' = 'fa'): string {
+  if (!dateInput) return '-';
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  
+  if (isNaN(date.getTime())) {
+    return String(dateInput);
+  }
+
+  if (lang === 'fa') {
+    const [jy, jm, jd] = g2j(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    const pad = (n: number) => n < 10 ? '0' + n : String(n);
+    return toPersianDigits(`${jy}/${pad(jm)}/${pad(jd)}`);
+  } else {
+    const pad = (n: number) => n < 10 ? '0' + n : String(n);
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+}
+
+export function formatDisplayDateWithMonth(dateInput: Date | string | number, lang: 'fa' | 'en' = 'fa'): string {
+  if (!dateInput) return '-';
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  
+  if (isNaN(date.getTime())) {
+    return String(dateInput);
+  }
+
+  if (lang === 'fa') {
+    const [jy, jm, jd] = g2j(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    return `${toPersianDigits(jd)} ${JALALI_MONTH_NAMES[jm - 1]} ${toPersianDigits(jy)}`;
+  } else {
+    return `${GREGORIAN_MONTH_NAMES[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  }
+}
 
 // Jalali to Gregorian converter
 export function j2g(jy: number, jm: number, jd: number): [number, number, number] {
@@ -90,10 +221,15 @@ export function getPersianStartWeekday(jy: number, jm: number): number {
   return (gDay + 1) % 7; // 0: Sat, 1: Sun ... 6: Fri
 }
 
-export function formatMinutesToHours(mins: number): string {
+export function formatMinutesToHours(mins: number, lang: 'fa' | 'en' = 'fa'): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  if (h === 0) return `${toPersianDigits(m)} دقیقه`;
-  if (m === 0) return `${toPersianDigits(h)} ساعت`;
-  return `${toPersianDigits(h)} ساعت و ${toPersianDigits(m)} دقیقه`;
+  if (lang === 'en') {
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  }
+  if (h === 0) return `${toPersianDigits(m)} د`;
+  if (m === 0) return `${toPersianDigits(h)} س`;
+  return `${toPersianDigits(h)} س و ${toPersianDigits(m)} د`;
 }

@@ -1,8 +1,10 @@
+@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
+@import url('https://cdn.jsdelivr.net/gh/fontiran/iran-yekan-font@v1.0.0/css/iran-yekan.css');
 @import "tailwindcss";
 
 @layer base {
   :root {
-    --font-vazir: 'Vazirmatn', 'B Nazanin', 'BNazanin', 'Vazir', 'Sahel', 'BYekan', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-iranyekan: 'Iran Yekan', 'IRANYekan', 'IRANYekanX', 'Vazirmatn', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
 
@@ -10,10 +12,11 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    font-family: var(--font-iranyekan) !important;
   }
 
   body {
-    font-family: var(--font-vazir);
+    font-family: var(--font-iranyekan) !important;
     background-color: #0F172A;
     color: #E2E8F0;
     line-height: 1.6;
@@ -21,13 +24,13 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-vazir);
+    font-family: var(--font-iranyekan) !important;
     letter-spacing: -0.02em;
     font-weight: 700;
   }
 
   .font-sans {
-    font-family: var(--font-vazir);
+    font-family: var(--font-iranyekan) !important;
   }
 
   .font-mono {
@@ -35,11 +38,88 @@
   }
 
   input, button, select, textarea {
-    font-family: var(--font-vazir);
+    font-family: var(--font-iranyekan) !important;
   }
 }
 
-/* Custom scrollbar for dark theme */
+/* Light Mode Styles - Universal Overrides for Tailwind v4 */
+body.light-mode {
+  background-color: #F1F5F9 !important;
+  color: #0F172A !important;
+}
+
+body.light-mode,
+body.light-mode [class*="bg-[#0F172A]"] {
+  background-color: #F1F5F9 !important;
+}
+
+body.light-mode [class*="bg-slate-900"] {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  color: #0F172A !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+}
+
+body.light-mode [class*="bg-slate-950"] {
+  background-color: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+body.light-mode [class*="bg-slate-800"] {
+  background-color: #F1F5F9 !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+body.light-mode [class*="border-slate-800"],
+body.light-mode [class*="border-slate-700"],
+body.light-mode [class*="border-slate-600"] {
+  border-color: #CBD5E1 !important;
+}
+
+body.light-mode [class*="text-slate-100"],
+body.light-mode [class*="text-slate-200"] {
+  color: #0F172A !important;
+}
+
+body.light-mode [class*="text-slate-300"],
+body.light-mode [class*="text-slate-400"] {
+  color: #334155 !important;
+}
+
+body.light-mode [class*="text-slate-500"] {
+  color: #64748B !important;
+}
+
+body.light-mode input,
+body.light-mode select,
+body.light-mode textarea {
+  background-color: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+body.light-mode input::placeholder,
+body.light-mode textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* Gradient text fix in light mode */
+body.light-mode .bg-clip-text,
+body.light-mode [class*="bg-clip-text"] {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  background-image: linear-gradient(135deg, #0F766E 0%, #0369A1 50%, #047857 100%) !important;
+}
+
+body.light-mode .text-transparent,
+body.light-mode [class*="text-transparent"] {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

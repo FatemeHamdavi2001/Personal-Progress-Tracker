@@ -1,4 +1,42 @@
-export const DEFAULT_CATEGORIES = ['مطالعه', 'برنامه‌نویسی', 'ورزش', 'زبان', 'عمومی'];
+export interface CategoryItem {
+  name: string;
+  iconName?: string;
+  color?: string;
+}
+
+export const DEFAULT_CATEGORIES: CategoryItem[] = [];
+
+export interface GoalSubTask {
+  id: string;
+  title: string;
+  dayNumber?: number; // e.g., Day 1, Day 2
+  targetDate?: string;
+  targetHours?: number;
+  isCompleted?: boolean;
+}
+
+export type GoalTier = 'daily' | 'monthly' | 'yearly';
+export type TrackingMethod = 'hours_logged' | 'days_remaining';
+export type TargetType = 'hours' | 'days';
+
+export interface Goal {
+  id: string;
+  title: string;
+  startDate?: string; // YYYY/MM/DD or YYYY-MM-DD
+  targetDate?: string; // YYYY/MM/DD or YYYY-MM-DD (deadline)
+  deadlineDate?: string;
+  targetHours: number;
+  currentHours: number; // initial baseline hours
+  targetType?: TargetType; // 'hours' or 'days'
+  targetDays?: number;
+  dailyHours?: number;
+  trackingMethod?: TrackingMethod; // 'hours_logged' or 'days_remaining'
+  tier?: GoalTier; // 'daily' | 'monthly' | 'yearly'
+  subTasks?: GoalSubTask[];
+  category?: string;
+  color?: string; // hex or tailwind color
+  durationMonths?: number;
+}
 
 export interface Activity {
   id: string;
@@ -9,42 +47,8 @@ export interface Activity {
   description?: string;
   goalId?: string;
   category?: string;
+  subTaskId?: string;
 }
 
-export interface Goal {
-  id: string;
-  title: string;
-  targetDate: string; // YYYY-MM-DD
-  targetHours: number;
-  currentHours: number;
-  category?: string;
-}
-
-export const INITIAL_GOALS: Goal[] = [
-  {
-    id: 'goal-1',
-    title: 'یادگیری کامل جنگو',
-    targetDate: '1403/08/30',
-    targetHours: 100,
-    currentHours: 0,
-    category: 'برنامه‌نویسی'
-  },
-  {
-    id: 'goal-2',
-    title: 'مطالعه زبان تخصصی',
-    targetDate: '1403/09/15',
-    targetHours: 50,
-    currentHours: 0,
-    category: 'زبان'
-  },
-  {
-    id: 'goal-3',
-    title: 'ورزش و تندرستی',
-    targetDate: '1403/07/30',
-    targetHours: 30,
-    currentHours: 0,
-    category: 'ورزش'
-  }
-];
-
+export const INITIAL_GOALS: Goal[] = [];
 export const INITIAL_ACTIVITIES: Activity[] = [];

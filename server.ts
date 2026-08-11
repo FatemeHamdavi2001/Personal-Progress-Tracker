@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
@@ -9,13 +10,54 @@ async function startServer() {
 
   app.use(express.json({ limit: '10mb' }));
 
-  // API Endpoint for Gemini Chatbot
+  // File path to persist Admin GEMINI API Key across server restarts
+  const ADMIN_KEY_FILE = path.join(process.cwd(), '.admin_key.json');
+
+  let adminConfiguredApiKey = process.env.GEMINI_API_KEY || '';
+
+  // Load key from disk if available
+  if (fs.existsSync(ADMIN_KEY_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(ADMIN_KEY_FILE, 'utf-8'));
+      if (data && data.apiKey) {
+        adminConfiguredApiKey = data.apiKey;
+      }
+    } catch (err) {
+      console.error('Failed to load admin key file:', err);
+    }
+  }
+
+  // API Endpoint to Get/Set Admin API Key Config
+  app.get('/api/admin/config', (req, res) => {
+    return res.json({
+      hasCustomKey: Boolean(adminConfiguredApiKey),
+      maskedKey: adminConfiguredApiKey
+        ? `${adminConfiguredApiKey.slice(0, 6)}...${adminConfiguredApiKey.slice(-4)}`
+        : ''
+    });
+  });
+
+  app.post('/api/admin/config', (req, res) => {
+    const { apiKey } = req.body;
+    if (typeof apiKey === 'string') {
+      adminConfiguredApiKey = apiKey.trim();
+      try {
+        fs.writeFileSync(ADMIN_KEY_FILE, JSON.stringify({ apiKey: adminConfiguredApiKey }));
+      } catch (err) {
+        console.error('Failed to write admin key file:', err);
+      }
+      return res.json({ success: true, message: 'کلید API با موفقیت در سرور ذخیره شد و برای تمامی کاربران فعال گردید.' });
+    }
+    return res.status(400).json({ error: 'کلید API نامعتبر است.' });
+  });
+
+  // API Endpoint for Gemini Chatbot (Accessible to ALL users)
   app.post('/api/chat', async (req, res) => {
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = adminConfiguredApiKey || process.env.GEMINI_API_KEY;
       if (!apiKey) {
         return res.status(500).json({
-          error: 'کلید GEMINI_API_KEY تنظیم نشده است. لطفاً کلید API را بررسی فرمایید.'
+          error: 'کلید API هوش مصنوعی توسط مدیر سیستم تنظیم نشده است. لطفاً از پنل ادمین کلید API را وارد نمایید.'
         });
       }
 
@@ -25,12 +67,13 @@ async function startServer() {
         return res.status(400).json({ error: 'ارسال تاریخچه پیام‌ها الزامی است.' });
       }
 
-      const selectedModel = model || 'gemini-3.5-flash';
+      // Default to valid Gemini flash model
+      const selectedModel = model || 'gemini-3.6-flash';
 
       const defaultSystemInstruction =
-        `شما دستیار و مربی هوشمند توسعه فردی، مدیریت زمان و بهره‌وری در برنامه «ردیاب پیشرفت شخصی» هستید.\n` +
+        `شما دستیار و مربی هوشمند توسعه فردی، مدیریت زمان و بهره‌وری در برنامه «You Can Do it» هستید.\n` +
         `وظیفه شما راهنمایی کاربر برای دستیابی به اهداف، بهبود زمان تمرکز، ساخت عادت‌های روزانه پایدار و برنامه‌ریزی هوشمند است.\n` +
-        `پاسخ‌ها را صمیمی، انگیزشی، دقیق و با فرمت مرتب به زبان فارسی ارائه دهید.\n` +
+        `پاسخ‌ها را صمیمی، انگیزشی، دقیق و با فرمت مرتب ارائه دهید.\n` +
         (systemRole ? `نقش تخصصی فعال شما: ${systemRole}\n` : '') +
         (userDataContext ? `اطلاعات و آمارهای فعلی کاربر در برنامه:\n${userDataContext}\n` : '');
 

@@ -10,6 +10,17 @@ export interface UserAccount {
   role?: 'admin' | 'user';
 }
 
+export interface AuditLog {
+  id: string;
+  userId?: string;
+  username: string;
+  displayName: string;
+  event: 'login' | 'logout';
+  timestamp: string; // ISO string
+  jalaliDate: string; // YYYY/MM/DD
+  jalaliTime: string; // HH:mm:ss
+}
+
 export const AVATAR_COLORS = [
   { id: 'teal', name: 'فیروزه‌ای', bgClass: 'bg-teal-500/20 text-teal-400 border-teal-500/40', badgeClass: 'bg-teal-500 text-slate-950' },
   { id: 'blue', name: 'آبی', bgClass: 'bg-blue-500/20 text-blue-400 border-blue-500/40', badgeClass: 'bg-blue-500 text-slate-950' },

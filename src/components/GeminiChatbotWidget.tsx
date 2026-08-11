@@ -45,7 +45,7 @@ const SYSTEM_ROLES = [
 ];
 
 const GEMINI_MODELS = [
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', badge: 'عمومی و هوشمند' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', badge: 'عمومی و هوشمند' },
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', badge: 'تحلیل عمیق و پیشرفته' },
   { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'پاسخ فوق‌سریع' },
 ];
@@ -61,7 +61,7 @@ export const GeminiChatbotWidget: React.FC<GeminiChatbotWidgetProps> = ({
   const [showSettings, setShowSettings] = useState(false);
 
   const [selectedRole, setSelectedRole] = useState(SYSTEM_ROLES[0].title);
-  const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.6-flash');
   const [includeContext, setIncludeContext] = useState(true);
 
   const [inputMessage, setInputMessage] = useState('');
