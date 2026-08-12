@@ -1,25 +1,23 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeFirestore, persistentLocalCache, getFirestore, setLogLevel } from 'firebase/firestore';
-import config from '../../firebase-applet-config.json';
 
-// Silence non-error info logs from Firestore (e.g., offline mode warnings)
+// Silence non-error info logs from Firestore
 try {
   setLogLevel('error');
 } catch {}
 
 const firebaseConfig = {
-  apiKey: config.apiKey,
-  authDomain: config.authDomain,
-  projectId: config.projectId,
-  storageBucket: config.storageBucket,
-  messagingSenderId: config.messagingSenderId,
-  appId: config.appId,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Specify custom database ID if present in config, otherwise default
-const databaseId = config.firestoreDatabaseId || '(default)';
+const databaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || '(default)';
 
 let firestoreDb;
 try {
@@ -32,4 +30,3 @@ try {
 
 export const db = firestoreDb;
 export default app;
-
