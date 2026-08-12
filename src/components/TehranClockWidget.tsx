@@ -17,10 +17,11 @@ export const TehranClockWidget: React.FC<TehranClockWidgetProps> = ({ lang = 'fa
     return () => clearInterval(timer);
   }, []);
 
+  const currentLang: 'fa' | 'en' = lang === 'en' ? 'en' : 'fa';
   const tehranParts = getTehranDateParts(now);
   const [jy, jm, jd] = getTehranJalaliToday();
-  const dayName = getPersianDayName(now, lang);
-  const timeFormatted = formatTehranTime(now, lang);
+  const dayName = getPersianDayName(now, currentLang);
+  const timeFormatted = formatTehranTime(now, currentLang);
 
   return (
     <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-1.5 flex items-center gap-2.5 shadow-md hover:border-slate-600 transition-all text-xs font-sans select-none">

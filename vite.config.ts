@@ -6,7 +6,6 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
-    base: '/Personal-Progress-Tracker/',
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

@@ -47,7 +47,7 @@ import {
   ListTodo,
   CheckSquare
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { Activity, Goal, GoalSubTask, GoalTier, TrackingMethod } from './types/tracker';
 import { UserAccount, AuditLog } from './types/user';
 import { ColorThemeKey, COLOR_THEMES, AVATAR_COLORS } from './types/theme';
@@ -62,6 +62,13 @@ import { PomodoroTimerWidget } from './components/PomodoroTimerWidget';
 import { JalaliDatePicker } from './components/JalaliDatePicker';
 import { Language, translations } from './utils/translations';
 import { exportAuditLogsToExcel } from './utils/excel';
+import {
+  registerUserInFirestore,
+  loginUserFromFirestore,
+  fetchAllUsersFromFirestore,
+  saveUserDataToFirestore,
+  loadUserDataFromFirestore
+} from './services/userService';
 
 // Preset Colors for Custom Goals
 const PRESET_GOAL_COLORS = [
@@ -96,6 +103,17 @@ const DEFAULT_ADMIN_USER: UserAccount = {
 };
 
 export default function App() {
+  // Mobile Performance Optimization: Detect screen width to disable Framer Motion animations on mobile (<768px)
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Language & RTL State
   const [lang, setLang] = useState<Language>(() => {
     return (localStorage.getItem('youcandoit_lang') as Language) || 'fa';
@@ -186,7 +204,7 @@ export default function App() {
     if (savedList) {
       try { list = JSON.parse(savedList); } catch {}
     }
-    return list.find(u => u.username.toLowerCase() === activeUsername.toLowerCase()) || null;
+    return list.find(u => u && u.username && typeof u.username === 'string' && u.username.toLowerCase() === activeUsername.toLowerCase()) || null;
   });
 
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -317,6 +335,23 @@ export default function App() {
     title: ''
   });
 
+  // Load users from Firestore on mount
+  useEffect(() => {
+    fetchAllUsersFromFirestore().then(remoteUsers => {
+      if (remoteUsers && remoteUsers.length > 0) {
+        setUsers(prev => {
+          const merged = [...remoteUsers];
+          prev.forEach(p => {
+            if (p && p.username && !merged.some(m => m && m.username && m.username.toLowerCase() === p.username.toLowerCase())) {
+              merged.push(p);
+            }
+          });
+          return merged;
+        });
+      }
+    });
+  }, []);
+
   // Save users list
   useEffect(() => {
     localStorage.setItem('progress_users_list', JSON.stringify(users));
@@ -327,103 +362,136 @@ export default function App() {
   const [goals, setGoals] = useState<Goal[]>([]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUser.username) return;
     const userKey = currentUser.username.toLowerCase();
 
-    // Load activities
-    const actSaved = localStorage.getItem(`progress_user_${userKey}_activities`);
-    if (actSaved) {
-      try { setActivities(JSON.parse(actSaved)); } catch { setActivities([]); }
-    } else {
-      setActivities([]);
-    }
+    // Load from Firestore first
+    loadUserDataFromFirestore(currentUser.id).then(remoteData => {
+      if (remoteData) {
+        if (remoteData.activities) setActivities(remoteData.activities);
+        if (remoteData.goals) setGoals(remoteData.goals);
+        if (remoteData.categories) setCategories(remoteData.categories);
+      } else {
+        // Fallback to local storage if no Firestore data yet
+        const actSaved = localStorage.getItem(`progress_user_${userKey}_activities`);
+        if (actSaved) {
+          try { setActivities(JSON.parse(actSaved)); } catch { setActivities([]); }
+        } else {
+          setActivities([]);
+        }
 
-    // Load goals
-    const goalSaved = localStorage.getItem(`progress_user_${userKey}_goals`);
-    if (goalSaved) {
-      try { setGoals(JSON.parse(goalSaved)); } catch { setGoals(INITIAL_GOALS); }
-    } else {
-      setGoals(INITIAL_GOALS);
-    }
+        const goalSaved = localStorage.getItem(`progress_user_${userKey}_goals`);
+        if (goalSaved) {
+          try { setGoals(JSON.parse(goalSaved)); } catch { setGoals(INITIAL_GOALS); }
+        } else {
+          setGoals(INITIAL_GOALS);
+        }
 
-    // Load categories
-    const catSaved = localStorage.getItem(`progress_user_${userKey}_categories`);
-    if (catSaved) {
-      try { setCategories(JSON.parse(catSaved)); } catch { setCategories(DEFAULT_CATEGORIES); }
-    } else {
-      setCategories(DEFAULT_CATEGORIES);
-    }
+        const catSaved = localStorage.getItem(`progress_user_${userKey}_categories`);
+        if (catSaved) {
+          try { setCategories(JSON.parse(catSaved)); } catch { setCategories(DEFAULT_CATEGORIES); }
+        } else {
+          setCategories(DEFAULT_CATEGORIES);
+        }
+      }
+    });
 
     // Initialize user profile modal state
-    setProfileDisplayNameInput(currentUser.displayName);
+    setProfileDisplayNameInput(currentUser.displayName || '');
     setProfileAvatarColorInput(currentUser.avatarColor || 'teal');
-  }, [currentUser?.username]);
+  }, [currentUser?.id, currentUser?.username]);
 
-  // Save state
+  // Save state locally and to Firestore
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUser.username) return;
     const userKey = currentUser.username.toLowerCase();
     localStorage.setItem(`progress_user_${userKey}_activities`, JSON.stringify(activities));
-  }, [activities, currentUser?.username]);
+    saveUserDataToFirestore(currentUser.id, activities, goals, categories);
+  }, [activities, currentUser?.id, currentUser?.username]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUser.username) return;
     const userKey = currentUser.username.toLowerCase();
     localStorage.setItem(`progress_user_${userKey}_goals`, JSON.stringify(goals));
-  }, [goals, currentUser?.username]);
+    saveUserDataToFirestore(currentUser.id, activities, goals, categories);
+  }, [goals, currentUser?.id, currentUser?.username]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUser.username) return;
     const userKey = currentUser.username.toLowerCase();
     localStorage.setItem(`progress_user_${userKey}_categories`, JSON.stringify(categories));
-  }, [categories, currentUser?.username]);
+    saveUserDataToFirestore(currentUser.id, activities, goals, categories);
+  }, [categories, currentUser?.id, currentUser?.username]);
 
-  // Auth Handlers
-  const handleLogin = (e: React.FormEvent) => {
+  // Auth Handlers with Firestore
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    const target = users.find(u => u.username.toLowerCase() === loginUsername.trim().toLowerCase());
-    if (!target) {
-      setAuthError('کاربری با این نام پیدا نشد.');
-      return;
+    setIsAuthLoading(true);
+
+    try {
+      // First try login via Firestore database
+      const res = await loginUserFromFirestore(loginUsername, loginPassword);
+      if (res.success && res.user) {
+        const updatedTarget = res.user;
+        setUsers(prev => {
+          const exists = prev.some(u => u.id === updatedTarget.id);
+          if (exists) return prev.map(u => u.id === updatedTarget.id ? updatedTarget : u);
+          return [...prev, updatedTarget];
+        });
+        setCurrentUser(updatedTarget);
+        setIsUnlocked(true);
+        sessionStorage.setItem('progress_active_username', updatedTarget.username);
+        localStorage.setItem('progress_active_username', updatedTarget.username);
+        sessionStorage.setItem('progress_unlocked', 'true');
+        setLoginPassword('');
+        logAuditEvent(updatedTarget.username, updatedTarget.displayName, 'login');
+        return;
+      }
+
+      // If Firestore lookup failed or offline fallback, try local users list
+      const target = users.find(u => u && u.username && u.username.toLowerCase() === loginUsername.trim().toLowerCase());
+      if (!target) {
+        setAuthError(res.error || 'کاربری با این نام کاربری پیدا نشد.');
+        return;
+      }
+      if (target.password !== loginPassword) {
+        setAuthError('رمز ورود اشتباه است.');
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      const updatedTarget: UserAccount = {
+        ...target,
+        lastLoginAt: nowIso,
+        loginCount: (target.loginCount || 0) + 1,
+        role: (target.username && target.username.toLowerCase() === 'admin') ? 'admin' : (target.role || 'user')
+      };
+
+      const updatedUsers = users.map(u => u.id === target.id ? updatedTarget : u);
+      setUsers(updatedUsers);
+      setCurrentUser(updatedTarget);
+      setIsUnlocked(true);
+      sessionStorage.setItem('progress_active_username', updatedTarget.username);
+      localStorage.setItem('progress_active_username', updatedTarget.username);
+      sessionStorage.setItem('progress_unlocked', 'true');
+      setLoginPassword('');
+
+      logAuditEvent(updatedTarget.username, updatedTarget.displayName, 'login');
+    } finally {
+      setIsAuthLoading(false);
     }
-    if (target.password !== loginPassword) {
-      setAuthError('رمز ورود اشتباه است.');
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-    const updatedTarget: UserAccount = {
-      ...target,
-      lastLoginAt: nowIso,
-      loginCount: (target.loginCount || 0) + 1,
-      role: target.username.toLowerCase() === 'admin' ? 'admin' : (target.role || 'user')
-    };
-
-    const updatedUsers = users.map(u => u.id === target.id ? updatedTarget : u);
-    setUsers(updatedUsers);
-    setCurrentUser(updatedTarget);
-    setIsUnlocked(true);
-    sessionStorage.setItem('progress_active_username', updatedTarget.username);
-    localStorage.setItem('progress_active_username', updatedTarget.username);
-    sessionStorage.setItem('progress_unlocked', 'true');
-    setLoginPassword('');
-
-    logAuditEvent(updatedTarget.username, updatedTarget.displayName, 'login');
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
 
     const cleanUsername = regUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
     if (!cleanUsername || cleanUsername.length < 3) {
       setAuthError('نام کاربری باید حداقل ۳ کاراکتر انگلیسی باشد.');
-      return;
-    }
-
-    if (users.some(u => u.username.toLowerCase() === cleanUsername)) {
-      setAuthError('این نام کاربری قبلاً ثبت شده است.');
       return;
     }
 
@@ -442,32 +510,41 @@ export default function App() {
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const newUser: UserAccount = {
-      id: `usr-${Date.now()}`,
-      username: cleanUsername,
-      displayName: regDisplayName.trim(),
-      password: regPassword,
-      avatarColor: regAvatarColor || 'teal',
-      createdAt: nowIso,
-      lastLoginAt: nowIso,
-      loginCount: 1,
-      role: cleanUsername === 'admin' ? 'admin' : 'user'
-    };
+    setIsAuthLoading(true);
 
-    setUsers(prev => [...prev, newUser]);
-    setCurrentUser(newUser);
-    setIsUnlocked(true);
-    sessionStorage.setItem('progress_active_username', newUser.username);
-    localStorage.setItem('progress_active_username', newUser.username);
-    sessionStorage.setItem('progress_unlocked', 'true');
+    try {
+      // Register in Firestore with strict unique username check
+      const res = await registerUserInFirestore({
+        username: cleanUsername,
+        displayName: regDisplayName.trim(),
+        password: regPassword,
+        avatarColor: regAvatarColor || 'teal',
+        createdAt: new Date().toISOString(),
+        role: cleanUsername === 'admin' ? 'admin' : 'user'
+      });
 
-    logAuditEvent(newUser.username, newUser.displayName, 'login');
+      if (!res.success || !res.user) {
+        setAuthError(res.error || 'خطا در ثبت‌نام کاربر.');
+        return;
+      }
 
-    setRegUsername('');
-    setRegDisplayName('');
-    setRegPassword('');
-    setRegConfirmPassword('');
+      const newUser = res.user;
+      setUsers(prev => [...prev, newUser]);
+      setCurrentUser(newUser);
+      setIsUnlocked(true);
+      sessionStorage.setItem('progress_active_username', newUser.username);
+      localStorage.setItem('progress_active_username', newUser.username);
+      sessionStorage.setItem('progress_unlocked', 'true');
+
+      logAuditEvent(newUser.username, newUser.displayName, 'login');
+
+      setRegUsername('');
+      setRegDisplayName('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -914,7 +991,8 @@ export default function App() {
   // Auth Screen
   if (!isUnlocked || !currentUser) {
     return (
-      <div dir={lang === 'fa' ? 'rtl' : 'ltr'} className="bg-[#0F172A] text-slate-200 min-h-screen w-full flex items-center justify-center p-4 font-sans relative">
+      <MotionConfig reducedMotion={isMobile ? 'always' : 'never'}>
+        <div dir={lang === 'fa' ? 'rtl' : 'ltr'} className="bg-[#0F172A] text-slate-200 min-h-screen w-full flex items-center justify-center p-4 font-sans relative">
         {/* Top Controls on Login Screen */}
         <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex items-center gap-2 z-20">
           <button
@@ -998,24 +1076,24 @@ export default function App() {
                     {lang === 'fa' ? 'انتخاب سریع کاربر:' : 'Quick Select User:'}
                   </label>
                   <div className="flex flex-wrap gap-2 mb-3 max-h-28 overflow-y-auto p-1">
-                    {users.map(u => (
+                    {users.filter(u => u && u.username).map(u => (
                       <button
-                        key={u.id}
+                        key={u.id || u.username}
                         type="button"
                         onClick={() => {
-                          setLoginUsername(u.username);
+                          setLoginUsername(u.username || '');
                           setAuthError('');
                         }}
                         className={`px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2 transition-all cursor-pointer ${
-                          loginUsername.toLowerCase() === u.username.toLowerCase()
+                          (loginUsername || '').toLowerCase() === (u.username || '').toLowerCase()
                             ? `${activeTheme.badgeBg} ${activeTheme.badgeBorder} ${activeTheme.textPrimary} ring-2 ${activeTheme.ringAccent}`
                             : 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:bg-slate-800'
                         }`}
                       >
                         <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${getAvatarBadgeClass(u.avatarColor)}`}>
-                          {u.displayName.charAt(0)}
+                          {(u.displayName || u.username || 'U').charAt(0)}
                         </span>
-                        <span>{u.displayName}</span>
+                        <span>{u.displayName || u.username}</span>
                       </button>
                     ))}
                   </div>
@@ -1050,10 +1128,17 @@ export default function App() {
 
               <button
                 type="submit"
-                className={`w-full ${activeTheme.btnPrimary} text-slate-950 font-bold py-3 rounded-xl transition-all shadow-lg active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer`}
+                disabled={isAuthLoading}
+                className={`w-full ${activeTheme.btnPrimary} text-slate-950 font-bold py-3 rounded-xl transition-all shadow-lg active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50`}
               >
-                <LogIn className="w-4 h-4" />
-                <span>{t.login}</span>
+                {isAuthLoading ? (
+                  <span className="animate-pulse">{lang === 'fa' ? 'در حال برقراری ارتباط با دیتابیس...' : 'Connecting to database...'}</span>
+                ) : (
+                  <>
+                    <LogIn className="w-4 h-4" />
+                    <span>{t.login}</span>
+                  </>
+                )}
               </button>
             </form>
           )}
@@ -1083,8 +1168,12 @@ export default function App() {
                   required
                   value={regUsername}
                   onChange={e => setRegUsername(e.target.value)}
+                  placeholder="مثال: nazanin_1380"
                   className="w-full bg-slate-950/80 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-slate-500"
                 />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">
+                  {lang === 'fa' ? '⚠️ نام کاربری منحصر‌به‌فرد بوده و جهت ثبت‌نام در دیتابیس است' : 'Unique username saved in database'}
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
@@ -1116,20 +1205,29 @@ export default function App() {
 
               <button
                 type="submit"
-                className={`w-full ${activeTheme.btnPrimary} text-slate-950 font-bold py-2.5 rounded-xl transition-all shadow-lg active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer mt-3`}
+                disabled={isAuthLoading}
+                className={`w-full ${activeTheme.btnPrimary} text-slate-950 font-bold py-2.5 rounded-xl transition-all shadow-lg active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer mt-3 disabled:opacity-50`}
               >
-                <UserPlus className="w-4 h-4" />
-                <span>{t.register}</span>
+                {isAuthLoading ? (
+                  <span className="animate-pulse">{lang === 'fa' ? 'در حال ایجاد حساب در دیتابیس...' : 'Creating account in database...'}</span>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    <span>{t.register}</span>
+                  </>
+                )}
               </button>
             </form>
           )}
         </motion.div>
       </div>
+      </MotionConfig>
     );
   }
 
   return (
-    <div dir={lang === 'fa' ? 'rtl' : 'ltr'} className="bg-[#0F172A] text-slate-200 min-h-screen w-full p-4 sm:p-6 md:p-8 font-sans">
+    <MotionConfig reducedMotion={isMobile ? 'always' : 'never'}>
+      <div dir={lang === 'fa' ? 'rtl' : 'ltr'} className="bg-[#0F172A] text-slate-200 min-h-screen w-full p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto flex flex-col min-h-[calc(100vh-4rem)] gap-6">
 
         {/* Top Bar Header */}
@@ -2378,10 +2476,10 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
-                      {users.map(u => (
-                        <tr key={u.id} className="hover:bg-slate-800/50">
-                          <td className="p-2.5 font-bold text-slate-200">{u.displayName}</td>
-                          <td className="p-2.5 font-mono text-cyan-400">@{u.username}</td>
+                      {users.filter(u => u && (u.id || u.username)).map(u => (
+                        <tr key={u.id || u.username} className="hover:bg-slate-800/50">
+                          <td className="p-2.5 font-bold text-slate-200">{u.displayName || u.username || 'کاربر'}</td>
+                          <td className="p-2.5 font-mono text-cyan-400">@{u.username || '—'}</td>
                           <td className="p-2.5">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               u.role === 'admin' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-800 text-slate-400'
@@ -2447,5 +2545,6 @@ export default function App() {
       </AnimatePresence>
 
     </div>
+    </MotionConfig>
   );
 }

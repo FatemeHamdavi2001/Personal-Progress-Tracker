@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User accounts with unique usernames",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      },
+      "required": ["username", "password", "name", "role"]
+    },
+    "usernames": {
+      "title": "Usernames",
+      "description": "Lookup table to guarantee unique username registration",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "username"]
+    },
+    "goals": {
+      "title": "Goals",
+      "description": "User tracked goals",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "targetHours": { "type": "number" },
+        "tier": { "type": "string" }
+      },
+      "required": ["userId", "title"]
+    },
+    "activities": {
+      "title": "Activities",
+      "description": "Logged activities for goals",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "duration": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["userId", "title", "duration", "date"]
+    }
+  }
+}
