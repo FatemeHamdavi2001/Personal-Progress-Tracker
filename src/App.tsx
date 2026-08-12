@@ -672,6 +672,7 @@ export default function App() {
   const [actDate, setActDate] = useState(todayIso);
   const [actDescription, setActDescription] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [addToChecklist, setAddToChecklist] = useState(false);
 
   // Search, Filter & Sort State
   const [selectedGoalTierFilter, setSelectedGoalTierFilter] = useState<GoalTier | 'all'>('all');
@@ -737,31 +738,18 @@ export default function App() {
   };
 
   // Adding or Updating Activity Handler
-  const handleAddOrUpdateActivity = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!actTitle.trim() || !actDuration || Number(actDuration) <= 0) return;
+const handleAddOrUpdateActivity = (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!actTitle.trim() || !actDuration || Number(actDuration) <= 0) return;
 
-    const durationNum = Number(actDuration);
-    const jalaliFormatted = formatDisplayDate(actDate || todayIso, 'fa');
+  const durationNum = Number(actDuration);
+  const jalaliFormatted = formatDisplayDate(actDate || todayIso, 'fa');
 
-    if (editingActivityId) {
-      setActivities(prev => prev.map(a => {
-        if (a.id !== editingActivityId) return a;
-        return {
-          ...a,
-          title: actTitle.trim(),
-          duration: durationNum,
-          date: actDate,
-          jalaliDate: jalaliFormatted,
-          description: actDescription.trim(),
-          goalId: actGoalId || undefined,
-          category: actCategory
-        };
-      }));
-      setEditingActivityId(null);
-    } else {
-      const newActivity: Activity = {
-        id: `act-${Date.now()}`,
+  if (editingActivityId) {
+    setActivities(prev => prev.map(a => {
+      if (a.id !== editingActivityId) return a;
+      return {
+        ...a,
         title: actTitle.trim(),
         duration: durationNum,
         date: actDate,
@@ -770,19 +758,49 @@ export default function App() {
         goalId: actGoalId || undefined,
         category: actCategory
       };
-      setActivities(prev => [newActivity, ...prev]);
-    }
+    }));
+    setEditingActivityId(null);
+  } else {
+    const newActivity: Activity = {
+      id: `act-${Date.now()}`,
+      title: actTitle.trim(),
+      duration: durationNum,
+      date: actDate,
+      jalaliDate: jalaliFormatted,
+      description: actDescription.trim(),
+      goalId: actGoalId || undefined,
+      category: actCategory
+    };
+    setActivities(prev => [newActivity, ...prev]);
 
-    // Reset form
-    setActTitle('');
-    setActDuration('');
-    setActGoalId('');
-    setActCategory('عمومی');
-    setActDate(todayIso);
-    setActDescription('');
-    setShowSuccessToast(true);
-    setTimeout(() => setShowSuccessToast(false), 3000);
-  };
+    // ✅ اضافه به چک‌لیست روزانه
+    if (addToChecklist) {
+      const checklistKey = `daily_checklist_${currentUser.username.toLowerCase()}`;
+      const existing = JSON.parse(localStorage.getItem(checklistKey) || '[]');
+      const newItem = {
+        id: `check-${Date.now()}`,
+        text: actTitle.trim(),
+        done: false,
+        date: actDate,
+        goalId: actGoalId || undefined,
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(checklistKey, JSON.stringify([newItem, ...existing]));
+      window.dispatchEvent(new Event('checklistUpdated'));
+    }
+  }
+
+  // Reset form
+  setActTitle('');
+  setActDuration('');
+  setActGoalId('');
+  setActCategory('عمومی');
+  setActDate(todayIso);
+  setActDescription('');
+  setAddToChecklist(false);
+  setShowSuccessToast(true);
+  setTimeout(() => setShowSuccessToast(false), 3000);
+};
 
   // Open New Goal Modal
   const handleOpenNewGoalModal = () => {
@@ -1714,6 +1732,19 @@ export default function App() {
                   onChange={e => setActDescription(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-slate-500"
                 />
+              </div>
+              {/* ✅ چک‌باکس اضافه به چک‌لیست روزانه */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="addToChecklist"
+                  checked={addToChecklist}
+                  onChange={e => setAddToChecklist(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500"
+                />
+                <label htmlFor="addToChecklist" className="text-slate-300 text-xs font-medium cursor-pointer">
+                  {lang === 'fa' ? '➕ اضافه به چک‌لیست روزانه' : '➕ Add to Daily Checklist'}
+                </label>
               </div>
 
               <div className="flex gap-2">
