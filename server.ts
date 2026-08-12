@@ -30,25 +30,26 @@ async function setGeminiApiKey(apiKey: string): Promise<boolean> {
   } catch { return false; }
 }
 
-const appExpress = express();
-appExpress.use(express.json());
+const expressApp = express();
+expressApp.use(express.json());
 
-appExpress.get('/api/admin/config', async (req, res) => {
+expressApp.get('/api/admin/config', async (req, res) => {
   const key = await getGeminiApiKey();
   res.json({ hasCustomKey: !!key, maskedKey: key ? `${key.slice(0,6)}...${key.slice(-4)}` : '' });
 });
 
-appExpress.post('/api/admin/config', async (req, res) => {
+expressApp.post('/api/admin/config', async (req, res) => {
   const { apiKey } = req.body;
   if (!apiKey?.trim()) return res.status(400).json({ error: 'کلید نامعتبر' });
   const ok = await setGeminiApiKey(apiKey.trim());
-  ok ? res.json({ success: true, message: 'ذخیره شد' }) : res.status(500).json({ error: 'خطا' });
+  ok ? res.json({ success: true, message: 'کلید ذخیره شد' }) : res.status(500).json({ error: 'خطا در ذخیره' });
 });
 
-appExpress.post('/api/chat', async (req, res) => {
+expressApp.post('/api/chat', async (req, res) => {
   try {
     const apiKey = await getGeminiApiKey();
-    if (!apiKey) return res.status(500).json({ error: 'کلید تنظیم نشده' });
+    if (!apiKey) return res.status(500).json({ error: 'کلید API تنظیم نشده' });
+
     const { messages, model, systemRole, userDataContext } = req.body;
     if (!messages?.length) return res.status(400).json({ error: 'پیام ارسال نشده' });
 
@@ -65,10 +66,8 @@ appExpress.post('/api/chat', async (req, res) => {
   }
 });
 
-if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, 'dist');
-  appExpress.use(express.static(distPath));
-  appExpress.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
-}
+const distPath = path.join(__dirname, 'dist');
+expressApp.use(express.static(distPath));
+expressApp.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
 
-export default appExpress;
+export default expressApp;
