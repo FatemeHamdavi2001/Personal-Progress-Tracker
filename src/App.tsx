@@ -89,18 +89,6 @@ const INITIAL_GOALS: Goal[] = [];
 const INITIAL_ACTIVITIES: Activity[] = [];
 const DEFAULT_CATEGORIES: string[] = ['عمومی', 'مطالعه', 'ورزش', 'پروژه کاری', 'تمرکز و یادگیری'];
 
-// Admin Account
-const DEFAULT_ADMIN_USER: UserAccount = {
-  id: 'usr-admin',
-  username: 'admin',
-  displayName: 'مدیر سیستم (Admin)',
-  password: 'admin',
-  avatarColor: 'purple',
-  createdAt: new Date().toISOString(),
-  lastLoginAt: new Date().toISOString(),
-  loginCount: 1,
-  role: 'admin'
-};
 
 export default function App() {
   // Mobile Performance Optimization: Detect screen width to disable Framer Motion animations on mobile (<768px)
@@ -187,12 +175,12 @@ export default function App() {
   // Multi-User Management State
   const [users, setUsers] = useState<UserAccount[]>(() => {
     const saved = localStorage.getItem('progress_users_list');
-    if (!saved) return [DEFAULT_ADMIN_USER];
+    if (!saved) return [];
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [DEFAULT_ADMIN_USER];
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [];
     } catch {
-      return [DEFAULT_ADMIN_USER];
+      return [];
     }
   });
 
@@ -200,7 +188,7 @@ export default function App() {
     const activeUsername = sessionStorage.getItem('progress_active_username') || localStorage.getItem('progress_active_username');
     if (!activeUsername) return null;
     const savedList = localStorage.getItem('progress_users_list');
-    let list = [DEFAULT_ADMIN_USER];
+    let list = [];
     if (savedList) {
       try { list = JSON.parse(savedList); } catch {}
     }
@@ -405,23 +393,13 @@ export default function App() {
   useEffect(() => {
     if (!currentUser || !currentUser.username) return;
     const userKey = currentUser.username.toLowerCase();
+  
     localStorage.setItem(`progress_user_${userKey}_activities`, JSON.stringify(activities));
-    saveUserDataToFirestore(currentUser.id, activities, goals, categories);
-  }, [activities, currentUser?.id, currentUser?.username]);
-
-  useEffect(() => {
-    if (!currentUser || !currentUser.username) return;
-    const userKey = currentUser.username.toLowerCase();
     localStorage.setItem(`progress_user_${userKey}_goals`, JSON.stringify(goals));
-    saveUserDataToFirestore(currentUser.id, activities, goals, categories);
-  }, [goals, currentUser?.id, currentUser?.username]);
-
-  useEffect(() => {
-    if (!currentUser || !currentUser.username) return;
-    const userKey = currentUser.username.toLowerCase();
     localStorage.setItem(`progress_user_${userKey}_categories`, JSON.stringify(categories));
+  
     saveUserDataToFirestore(currentUser.id, activities, goals, categories);
-  }, [categories, currentUser?.id, currentUser?.username]);
+ }, [activities, goals, categories, currentUser?.id, currentUser?.username]);
 
   // Auth Handlers with Firestore
   const [isAuthLoading, setIsAuthLoading] = useState(false);
@@ -509,7 +487,14 @@ export default function App() {
       setAuthError('تکرار رمز ورود با رمز وارد شده مطابقت ندارد.');
       return;
     }
-
+    // ✅ جلوگیری از ثبت‌نام با نام admin اگر قبلاً وجود داره
+    if (cleanUsername === 'admin') {
+    const adminExists = users.some(u => u.username.toLowerCase() === 'admin');
+    if (adminExists) {
+       setAuthError('❌ کاربر ادمین از قبل وجود دارد. نمی‌توانید با این نام ثبت‌نام کنید.');
+    return;
+  }
+  }
     setIsAuthLoading(true);
 
     try {
@@ -917,6 +902,29 @@ const handleAddOrUpdateActivity = (e: React.FormEvent) => {
       title: title || 'این فعالیت'
     });
   };
+  const handleToggleActivityDone = (activityId: string) => {
+  setActivities(prev => prev.map(act => {
+    if (act.id !== activityId) return act;
+    const newDone = !(act.done || false);
+    
+    if (newDone) {
+      const checklistKey = `daily_checklist_${currentUser.username.toLowerCase()}`;
+      const existing = JSON.parse(localStorage.getItem(checklistKey) || '[]');
+      const newItem = {
+        id: `check-${Date.now()}`,
+        text: act.title,
+        done: true,
+        date: act.date,
+        goalId: act.goalId,
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(checklistKey, JSON.stringify([newItem, ...existing]));
+      window.dispatchEvent(new Event('checklistUpdated'));
+    }
+    
+    return { ...act, done: newDone };
+  }));
+};
 
   const requestDeleteGoal = (id: string, title: string) => {
     setDeleteConfirmModal({
@@ -1823,6 +1831,12 @@ const handleAddOrUpdateActivity = (e: React.FormEvent) => {
                     key={act.id}
                     className="p-3 bg-slate-900/80 rounded-xl border border-slate-700/70 flex items-center justify-between text-xs gap-3 shadow-xs"
                   >
+                    <input
+  type="checkbox"
+  checked={act.done || false}
+  onChange={() => handleToggleActivityDone(act.id)}
+  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500 shrink-0"
+/>
                     <div className="space-y-1">
                       <h4 className="font-bold text-slate-200">{act.title}</h4>
                       <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">

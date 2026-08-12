@@ -33,6 +33,17 @@ export async function registerUserInFirestore(
     }
     const normalizedUsername = String(userData.username).trim().toLowerCase();
 
+    // ✅ جلوگیری از ثبت‌نام با نام admin اگر قبلاً وجود داره
+    if (normalizedUsername === 'admin') {
+      const adminCheck = await getDoc(doc(db, 'usernames', 'admin'));
+      if (adminCheck.exists()) {
+        return {
+          success: false,
+          error: '❌ کاربر ادمین از قبل وجود دارد. نمی‌توانید با این نام ثبت‌نام کنید.'
+        };
+      }
+    }
+
     // 1. Check unique username in Firestore 'usernames' collection
     const usernameDocRef = doc(db, 'usernames', normalizedUsername);
     const usernameSnap = await getDoc(usernameDocRef);
